@@ -661,12 +661,12 @@ var SalvageContext = (function () {
     SalvageContext.tokens = [
         {
             "name": "normal",
-            "expr": /^[a-z_\$]([a-z_\$]+)?/i,
+            "expr": /^[a-z_\$]([a-z_\$\d]+)?/i,
             "match": 0
         },
         {
             "name": "enclosed",
-            "expr": /^\[([a-z_\$]([a-z_\$]+)?)\]/i,
+            "expr": /^\[([a-z_\$]([a-z_\$\d]+)?)\]/i,
             "match": 1
         },
         {
