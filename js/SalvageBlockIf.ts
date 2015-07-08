@@ -50,8 +50,6 @@ class SalvageBlockIf extends SalvageBlock {
 
 		if ( ( Salvage.isPrimitive( data ) && !!( data ) ) || ( Salvage.isComplex( data ) && !Salvage.isEMPTY( data ) ) ) {
 
-			console.log( 'evalTRUE: ', JSON.stringify( data , undefined, 4 ) );
-
 			for ( i=0, len = this.ifchildren.length; i<len; i++ ) {
 				out.push( this.ifchildren[i].parse( context ) );
 			}
