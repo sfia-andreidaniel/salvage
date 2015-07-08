@@ -44,7 +44,7 @@ var Salvage = (function () {
         return value === true || value === false;
     };
     Salvage.isNUMBER = function (value) {
-        return !isNaN(value) && isFinite(value) ? true : false;
+        return !isNaN(value) && isFinite(value) && (value * 1) === value ? true : false;
     };
     Salvage.isComplex = function (value) {
         return Salvage.isARRAY(value) || Salvage.isOBJECT(value);

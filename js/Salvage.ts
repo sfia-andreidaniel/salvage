@@ -122,7 +122,7 @@ class Salvage {
 	}
 
 	public static isNUMBER( value ): boolean {
-		return !isNaN( value ) && isFinite( value ) ? true : false;
+		return !isNaN( value ) && isFinite( value ) && ( value * 1 ) === value ? true : false;
 	}
 
 	public static isComplex( value: any ): boolean {
