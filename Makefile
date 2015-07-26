@@ -1,4 +1,4 @@
 SHELL := /bin/bash
 
 build::
-	tsc js/main.ts --target es5 --out salvage.js
+	tsc js/build.ts --target es5 --out salvage.js
