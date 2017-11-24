@@ -1,58 +1,50 @@
-class IF extends Instruction {
+class SALVAGE_INSTRUCTION_IF extends SALVAGE_ABSTRACT_INSTRUCTION {
 
     private elseAppended: boolean = false;
 
-    private trueBranchChildren: IInstruction[] = [];
+    private trueBranchChildren: I_SALVAGE_INSTRUCTION[] = [];
 
-    private falseBranchChildren: IInstruction[] = [];
+    private falseBranchChildren: I_SALVAGE_INSTRUCTION[] = [];
 
     constructor(params: string[]) {
-        super(ESalvageBlockType.TOKEN_IF, params);
+
+        super(E_SALVAGE_BLOCK_TYPE.TOKEN_IF, []);
+
+        this.params[0] = Salvage.normalizePath( params[0] );
+
+        if ( null === this.params[0] ) {
+            throw new Error('Illegal IF variable: ' + params[0] );
+        }
+
     }
 
-    public append(instruction: IInstruction): IInstruction {
+    public append(instruction: I_SALVAGE_INSTRUCTION): I_SALVAGE_INSTRUCTION {
 
-        if (instruction.getBlockType() === ESalvageBlockType.TOKEN_ELSE) {
+        if (instruction.getBlockType() === E_SALVAGE_BLOCK_TYPE.TOKEN_ELSE) {
 
             if (this.elseAppended) {
 
                 throw new Error('Else appended!');
 
-            } else {
-
-                this.elseAppended = true;
-
             }
 
-            return this;
+            this.elseAppended = true;
+
+            return instruction;
+
+        }
+
+        if ( this.elseAppended ) {
+
+            this.falseBranchChildren.push( instruction );
 
         } else {
 
-            if (instruction.getBlockType() === ESalvageBlockType.TOKEN_END) {
-
-                return this.getParent();
-
-            } else {
-
-                instruction.withParent(this);
-
-                if (this.elseAppended) {
-
-                    this.falseBranchChildren.push(instruction.withParent(this));
-
-                } else {
-
-                    this.trueBranchChildren.push(instruction.withParent(this));
-
-                }
-
-                return instruction.allowChildren()
-                    ? instruction
-                    : this;
-
-            }
+            this.trueBranchChildren.push( instruction );
 
         }
+
+        return instruction.withParent( this );
 
     }
 
@@ -60,11 +52,11 @@ class IF extends Instruction {
         return true;
     }
 
-    public parse(context: IContext): string {
+    public parse(context: I_SALVAGE_CONTEXT): string {
 
         let result: string = '';
 
-        if (context.get(this.getParam(0))) {
+        if (context.isNotEmpty(this.getParam(0))) {
 
             for (let i = 0, len = this.trueBranchChildren.length; i < len; i++) {
                 result = result.concat(this.trueBranchChildren[i].parse(context));

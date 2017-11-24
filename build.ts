@@ -9,3 +9,4 @@
 ///<reference path="./VAR.ts" />
 ///<reference path="./EACH.ts" />
 ///<reference path="./ELSE.ts" />
+///<reference path="./WITH.ts" />

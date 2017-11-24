@@ -1,6 +1,23 @@
 class Salvage {
 
-    private instructions: IInstruction[];
+    private static GLOBAL_HELPERS: I_SALVAGE_HELPER[] = [
+        {
+            name: 'upper',
+            func: function (s: any): string {
+                return String(s).toUpperCase();
+            }
+        },
+        {
+            name: 'lower',
+            func: function (s: any): string {
+                return String(s).toLowerCase();
+            }
+        }
+    ];
+
+    private instructions: I_SALVAGE_INSTRUCTION[];
+
+    private helpers: I_SALVAGE_HELPER[] = [];
 
     private static readonly ARGUMENT_VALID_CHARS: string = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./_$#|';
 
@@ -9,31 +26,35 @@ class Salvage {
     private static readonly VAR_OTHER_CHARS: string = '$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789';
 
     constructor(template: string) {
+
         this.instructions = Salvage.tokenize(template);
+
+        for (let i = 0, len = Salvage.GLOBAL_HELPERS.length; i < len; i++) {
+            this.helpers.push(Salvage.GLOBAL_HELPERS[i]);
+        }
+
     }
 
-    private static createEmptyBlockText(): ISalvageBlock {
+    private static createEmptyBlockText(): I_SALVAGE_BLOCK {
         return {
-            token: ESalvageBlockType.TOKEN_TEXT,
+            token: E_SALVAGE_BLOCK_TYPE.TOKEN_TEXT,
             params: null,
             settings: null,
             text: '',
         };
     }
 
-    private static tokenize(template: string): IInstruction[] {
-
-        console.time('tokenize');
+    private static tokenize(template: string): I_SALVAGE_INSTRUCTION[] {
 
         let charIndex: number = 0,
             numChars: number = template.length,
             leftChars: number = numChars - charIndex,
-            block: ISalvageBlock = null,
+            block: I_SALVAGE_BLOCK = null,
             ch: string,
-            readResult: ISalvageBlock,
+            readResult: I_SALVAGE_BLOCK,
             blockTextLength: number,
-            blocks: ISalvageBlock[] = [],
-            instructions: IInstruction[] = [];
+            blocks: I_SALVAGE_BLOCK[] = [],
+            instructions: I_SALVAGE_INSTRUCTION[] = [];
 
         while (charIndex < numChars) {
 
@@ -89,61 +110,69 @@ class Salvage {
             return [];
         }
 
-        let pointer: IInstruction,
-            pointerParent: IInstruction;
+        let currentInstruction: I_SALVAGE_INSTRUCTION,
+            currentBlock: I_SALVAGE_INSTRUCTION;
 
-        instructions.push(pointer = this.createInstructionFromBlock(blocks[0]));
+        for (let i = 0, len = blocks.length; i < len; i++) {
 
-        for (let i = 1, len = blocks.length; i < len; i++) {
+            if (blocks[i].token === E_SALVAGE_BLOCK_TYPE.TOKEN_END) {
 
-            if ( null == pointer ) {
+                if (currentBlock) {
 
-                instructions.push( pointer = this.createInstructionFromBlock(blocks[i]) );
-
-            } else {
-
-                if (pointer.allowChildren()) {
-
-                    pointer = pointer.append(this.createInstructionFromBlock(blocks[i]));
+                    currentBlock = currentBlock.getParent();
 
                 } else {
 
-                    pointerParent = pointer.getParent();
+                    throw new Error('Unexpected TOKEN END!');
 
-                    if (null === pointerParent) {
-                        instructions.push(pointer = this.createInstructionFromBlock(blocks[i]));
-                    } else {
-                        pointer = pointerParent;
-                        pointer = pointer.append(this.createInstructionFromBlock(blocks[i]));
-                    }
+                }
+
+            } else {
+
+                currentInstruction = this.createInstructionFromBlock(blocks[i]);
+
+                if (currentBlock) {
+
+                    currentBlock.append(currentInstruction);
+
+                    currentInstruction.withParent(currentBlock);
+
+                } else {
+
+                    instructions.push(currentInstruction);
+
+                    currentInstruction.withParent(null);
+
+                }
+
+                if (currentInstruction.allowChildren()) {
+                    currentBlock = currentInstruction;
                 }
 
             }
 
         }
 
-        console.log( instructions );
-
-        console.timeEnd('tokenize');
-
         return instructions;
 
     }
 
-    public parse(model: ISalvageModel): string {
+    public parse(model: I_SALVAGE_MODEL): string {
 
         let result: string[] = [],
-            context = new CONTEXT(model);
+            context = new SALVAGE_CONTEXT(model, null, this.helpers);
 
         for (let i = 0, len = this.instructions.length; i < len; i++) {
             result.push(this.instructions[i].parse(context));
         }
 
+        window['mo'] = context;
+
         return result.join('');
 
     }
 
-    private static readToken(startIndex: number, numChars: number, buffer: string): ISalvageBlock {
+    private static readToken(startIndex: number, numChars: number, buffer: string): I_SALVAGE_BLOCK {
 
         if (buffer.charAt(startIndex) === '{' && buffer.charAt(startIndex + 1) === '{') {
 
@@ -153,7 +182,9 @@ class Salvage {
                 endOfBlock: boolean = false,
                 argument: string,
                 fullMatch: string = '',
-                readLength: number;
+                readLength: number,
+                numParsedArguments = 0,
+                isFirstArgumentVariableName: boolean = false;
 
             if (buffer.charAt(startIndex + 2) === '{') {
                 isEsc = true;
@@ -165,7 +196,15 @@ class Salvage {
 
             while (!endOfBlock) {
 
-                fullMatch += ( this.repeat(' ', readLength = this.readSpaces(buffer, readStart)) );
+                if (numParsedArguments >= 1 && isFirstArgumentVariableName) {
+
+                    fullMatch += ( this.repeat(' ', readLength = this.readPipeAndSpaces(buffer, readStart)) );
+
+                } else {
+
+                    fullMatch += ( this.repeat(' ', readLength = this.readSpaces(buffer, readStart)) );
+
+                }
 
                 readStart += readLength;
 
@@ -174,11 +213,22 @@ class Salvage {
                 readLength = argument.length;
 
                 if (readLength) {
+
                     fullMatch += argument;
                     readStart += readLength;
                     readStart += ( readLength = this.readSpaces(buffer, readStart) );
                     fullMatch += this.repeat(' ', readLength);
+
                     parsedArguments.push(argument);
+
+                    numParsedArguments++;
+
+                    if (numParsedArguments === 1) {
+
+                        isFirstArgumentVariableName = !this.isReservedKeyword(argument);
+
+                    }
+
                 } else {
                     endOfBlock = true;
                 }
@@ -231,7 +281,43 @@ class Salvage {
 
     }
 
-    private static readSpaces(buffer: string, readStart: number) {
+    private static readPipeAndSpaces(buffer: string, readStart: number): number {
+
+        let count: number = 0,
+            ch: string,
+            readPipes: number = 0;
+
+        while (ch = buffer.charAt(readStart)) {
+
+            if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t' || ch === '|') {
+
+                count++;
+
+                if (ch === '|') {
+                    readPipes++;
+                }
+
+                readStart++;
+
+            } else {
+                break;
+            }
+
+        }
+
+        if (readPipes === 1) {
+
+            return count;
+
+        } else {
+
+            return 0;
+        }
+
+    }
+
+
+    private static readSpaces(buffer: string, readStart: number): number {
 
         let count: number = 0,
             ch: string;
@@ -269,7 +355,7 @@ class Salvage {
 
     }
 
-    private static convertArgsToToken(args: string[], isEsc: boolean, fullMatch: string): ISalvageBlock {
+    private static convertArgsToToken(args: string[], isEsc: boolean, fullMatch: string): I_SALVAGE_BLOCK {
 
         let argsLength: number = args.length;
 
@@ -286,7 +372,7 @@ class Salvage {
                     return {
                         text: fullMatch,
                         params: args,
-                        token: ESalvageBlockType.TOKEN_VAR,
+                        token: E_SALVAGE_BLOCK_TYPE.TOKEN_VAR,
                         settings: {
                             escaped: isEsc,
                         }
@@ -299,8 +385,8 @@ class Salvage {
                         text: fullMatch,
                         params: null,
                         token: args[0] === '#end'
-                            ? ESalvageBlockType.TOKEN_END
-                            : ESalvageBlockType.TOKEN_ELSE,
+                            ? E_SALVAGE_BLOCK_TYPE.TOKEN_END
+                            : E_SALVAGE_BLOCK_TYPE.TOKEN_ELSE,
                         settings: null,
                     };
 
@@ -312,7 +398,14 @@ class Salvage {
 
                 if (!this.isReservedKeyword(args[0])) {
 
-                    return null;
+                    return {
+                        text: fullMatch,
+                        params: args,
+                        token: E_SALVAGE_BLOCK_TYPE.TOKEN_VAR,
+                        settings: {
+                            escaped: isEsc
+                        }
+                    };
 
                 }
 
@@ -328,7 +421,7 @@ class Salvage {
                         if (argsLength === 2 && this.isValidContextPath(args[1])) {
 
                             return {
-                                token: ESalvageBlockType.TOKEN_IF,
+                                token: E_SALVAGE_BLOCK_TYPE.TOKEN_IF,
                                 params: [args[1]],
                                 text: fullMatch,
                                 settings: {
@@ -345,7 +438,7 @@ class Salvage {
                         if (argsLength === 2 && this.isValidContextPath(args[1])) {
 
                             return {
-                                token: ESalvageBlockType.TOKEN_EACH,
+                                token: E_SALVAGE_BLOCK_TYPE.TOKEN_EACH,
                                 params: [args[1]],
                                 text: fullMatch,
                                 settings: null,
@@ -356,7 +449,7 @@ class Salvage {
                             if (argsLength === 4 && args[2] === 'in' && this.isValidContextPath(args[1]) && this.isValidVariableName(args[3])) {
 
                                 return {
-                                    token: ESalvageBlockType.TOKEN_EACH,
+                                    token: E_SALVAGE_BLOCK_TYPE.TOKEN_EACH,
                                     params: [args[1], args[3]],
                                     text: fullMatch,
                                     settings: null,
@@ -375,7 +468,7 @@ class Salvage {
                             if (this.isValidContextPath(args[1])) {
 
                                 return {
-                                    token: ESalvageBlockType.TOKEN_UNLESS,
+                                    token: E_SALVAGE_BLOCK_TYPE.TOKEN_WITH,
                                     params: [args[1]],
                                     text: fullMatch,
                                     settings: null,
@@ -399,7 +492,7 @@ class Salvage {
 
     private static isReservedKeyword(string: string): boolean {
 
-        return string === '#if' || string === '#each' || string === '#unless' || string === '#else' || string === '#end';
+        return string === '#if' || string === '#each' || string === '#unless' || string === '#else' || string === '#end' || string === '#with';
 
     }
 
@@ -412,6 +505,7 @@ class Salvage {
         let segments: string[] = string.split('/');
 
         for (let i = 0, len = segments.length; i < len; i++) {
+
             if (!( segments[i] === '.' || segments[i] === '..' || this.isValidVariableName(segments[i]) )) {
                 return false;
             }
@@ -428,19 +522,27 @@ class Salvage {
 
         } else {
 
-            if (Salvage.VAR_START_CHAR.indexOf(string.charAt(0))) {
+            let segments: string[] = string.split('.');
 
-                for (let i = 1, len = string.length; i < len; i++) {
-                    if (Salvage.VAR_OTHER_CHARS.indexOf(string.charAt(i)) === -1) {
-                        return false;
+            for (let i = 0, len = segments.length; i < len; i++) {
+
+                if (Salvage.VAR_START_CHAR.indexOf(segments[i].charAt(0)) > -1) {
+
+                    for (let j = 1, n = segments[i].length; j < n; j++) {
+                        if (Salvage.VAR_OTHER_CHARS.indexOf(segments[i].charAt(j)) === -1) {
+                            return false;
+                        }
                     }
-                }
 
-                return true;
+                } else {
+
+                    return false;
+
+                }
 
             }
 
-            return false;
+            return true;
         }
     }
 
@@ -452,34 +554,147 @@ class Salvage {
         return result;
     }
 
-    private static createInstructionFromBlock(block: ISalvageBlock): IInstruction {
+    private static createInstructionFromBlock(block: I_SALVAGE_BLOCK): I_SALVAGE_INSTRUCTION {
 
         switch (block.token) {
 
-            case ESalvageBlockType.TOKEN_IF:
-                return new IF(block.params);
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_IF:
+                return new SALVAGE_INSTRUCTION_IF(block.params);
 
-            case ESalvageBlockType.TOKEN_UNLESS:
-                return new UNLESS(block.params);
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_UNLESS:
+                return new SALVAGE_UNLESS(block.params);
 
-            case ESalvageBlockType.TOKEN_END:
-                return new END();
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_END:
+                return new SALVAGE_INSTRUCTION_END();
 
-            case ESalvageBlockType.TOKEN_TEXT:
-                return new TEXT(block.text);
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_TEXT:
+                return new SALVAGE_TEXT(block.text);
 
-            case ESalvageBlockType.TOKEN_VAR:
-                return new VAR(block.params, block.settings.escaped);
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_VAR:
+                return new SALVAGE_BLOCK_VAR(block.params, block.settings.escaped);
 
-            case ESalvageBlockType.TOKEN_EACH:
-                return new EACH(block.params);
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_EACH:
+                return new SALVAGE_INSTRUCTION_EACH(block.params);
 
-            case ESalvageBlockType.TOKEN_ELSE:
-                return new ELSE();
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_WITH:
+                return new SALVAGE_BLOCK_WITH(block.params);
+
+            case E_SALVAGE_BLOCK_TYPE.TOKEN_ELSE:
+                return new SALVAGE_INSTRUCTION_ELSE();
 
             default:
                 throw new Error('Unknown block type: ' + JSON.stringify(block));
         }
+
+    }
+
+    public static normalizePath(path: string): string {
+
+        if (!path) {
+
+            return path;
+
+        } else {
+
+            let segments: string[] = path.split('/'),
+                result: string[] = [],
+                resultLength: number = 0,
+                subSegments: string[];
+
+            for (let i = 0, len = segments.length; i < len; i++) {
+
+                if ('.' !== segments[i] && '' !== segments[i]) {
+
+                    if ('..' === segments[i]) {
+
+                        if (resultLength > 0) {
+
+                            resultLength--;
+                            result.pop();
+
+                        } else {
+
+                            resultLength++;
+                            result.push('..');
+
+                        }
+
+                    } else {
+
+                        subSegments = segments[i].split('.');
+
+                        for (let j = 0, n = subSegments.length; j < n; j++) {
+
+                            if ('' === subSegments[j]) {
+
+                                return null;
+
+                            } else {
+
+                                result.push(subSegments[j]);
+
+                                resultLength++;
+
+                            }
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+            for (let i = resultLength - 1; i > -1; i--) {
+
+                if (result[i] === 'this') {
+
+                    result.splice(i, 1);
+                    resultLength--;
+
+                }
+
+            }
+
+            return resultLength
+                ? result.join('/')
+                : null;
+
+        }
+
+    }
+
+    public static addHelper( helper: I_SALVAGE_HELPER ) {
+
+        if ( !helper ) {
+            throw new Error('Invalid argument!');
+        }
+
+        for ( let i=0, len = this.GLOBAL_HELPERS.length; i<len; i++ ) {
+            if ( this.GLOBAL_HELPERS[i].name === helper.name ) {
+                throw new Error('Helper "' + helper.name + '" already added!');
+            }
+        }
+
+        this.GLOBAL_HELPERS.push( helper );
+
+    }
+
+    public withHelper( helper: I_SALVAGE_HELPER ): this {
+
+        if ( !helper ) {
+            throw new Error('Invalid argument!');
+        }
+
+        for ( let i=0, len = this.helpers.length; i<len; i++ ) {
+            if ( this.helpers[i].name === helper.name ) {
+                throw new Error('Helper "' + helper.name + '" already added!');
+            }
+        }
+
+        this.helpers.push( helper );
+
+        return this;
 
     }
 }

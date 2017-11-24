@@ -1,58 +1,48 @@
-class UNLESS extends Instruction {
+class SALVAGE_UNLESS extends SALVAGE_ABSTRACT_INSTRUCTION {
 
     private elseAppended: boolean = false;
 
-    private trueBranchChildren: IInstruction[] = [];
+    private trueBranchChildren: I_SALVAGE_INSTRUCTION[] = [];
 
-    private falseBranchChildren: IInstruction[] = [];
+    private falseBranchChildren: I_SALVAGE_INSTRUCTION[] = [];
 
     constructor(params: string[]) {
-        super(ESalvageBlockType.TOKEN_UNLESS, params);
+
+        super(E_SALVAGE_BLOCK_TYPE.TOKEN_UNLESS, []);
+
+        this.params[0] = Salvage.normalizePath( params[0] );
+
+        if ( null === this.params[0] ) {
+            throw new Error('Illegal UNLESS variable: ' + params[0] );
+        }
+
     }
 
-    public append(instruction: IInstruction): IInstruction {
+    public append(instruction: I_SALVAGE_INSTRUCTION): I_SALVAGE_INSTRUCTION {
 
-        if (instruction.getBlockType() === ESalvageBlockType.TOKEN_ELSE) {
+        if (instruction.getBlockType() === E_SALVAGE_BLOCK_TYPE.TOKEN_ELSE) {
 
             if (this.elseAppended) {
 
                 throw new Error('Else appended!');
 
-            } else {
-
-                this.elseAppended = true;
-
             }
 
-            return this;
+            this.elseAppended = true;
+
+        }
+
+        if ( this.elseAppended ) {
+
+            this.trueBranchChildren.push( instruction );
 
         } else {
 
-            if (instruction.getBlockType() === ESalvageBlockType.TOKEN_END) {
-
-                return this.getParent();
-
-            } else {
-
-                instruction.withParent(this);
-
-                if (this.elseAppended) {
-
-                    this.falseBranchChildren.push(instruction);
-
-                } else {
-
-                    this.trueBranchChildren.push(instruction);
-
-                }
-
-                return instruction.allowChildren()
-                    ? instruction
-                    : this;
-
-            }
+            this.falseBranchChildren.push( instruction );
 
         }
+
+        return instruction.withParent( this );
 
     }
 
@@ -60,11 +50,11 @@ class UNLESS extends Instruction {
         return true;
     }
 
-    public parse(context: IContext): string {
+    public parse(context: I_SALVAGE_CONTEXT): string {
 
         let result: string = '';
 
-        if (!context.get(this.getParam(0))) {
+        if ( context.get(this.getParam(0))) {
 
             for (let i = 0, len = this.trueBranchChildren.length; i < len; i++) {
                 result = result.concat(this.trueBranchChildren[i].parse(context));

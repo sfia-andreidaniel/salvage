@@ -1,61 +1,95 @@
-class CONTEXT implements IContext {
+class SALVAGE_CONTEXT implements I_SALVAGE_CONTEXT {
 
-    private model: ISalvageModel;
+    private model: I_SALVAGE_MODEL;
 
-    private parent: IContext = null;
+    private parent: I_SALVAGE_CONTEXT = null;
 
-    constructor(model: ISalvageModel, parent?: IContext) {
+    private helpers: I_SALVAGE_HELPER[];
+
+    constructor(model: I_SALVAGE_MODEL, parent: I_SALVAGE_CONTEXT, helpers: I_SALVAGE_HELPER[] ) {
         this.model = model;
         this.parent = parent || null;
+        this.helpers = helpers || [];
     }
 
-    public get(variable: string) {
-        return this.model && this.model[variable]
-            ? this.model[variable]
-            : null;
+    public getModel(): I_SALVAGE_MODEL {
+        return this.model;
     }
 
-    public cd(path: string): IContext {
+    public get(variable: string): any {
 
-        let segments: string[] = path.split('/'),
-            cursor: IContext = this;
+        let segments: string[] = variable.split('/'),
+            numSegments: number = segments.length;
 
-        for (let i = 0, len = segments.length; i < len; i++) {
+        if ( numSegments > 1 ) {
 
-            switch (segments[i]) {
+            return this.cd( segments.slice(0, numSegments - 1 ).join('/') ).get( segments[ numSegments - 1 ] );
 
-                case '.':
-                case 'this':
-                case '':
-                    break;
+        } else {
 
-                case '..':
-                    cursor = cursor.getParent();
-                    break;
+            if ( segments[0] == '..' ) {
 
-                default:
+                return this.getParent().getModel();
 
-                    if (this.model[segments[i]] && this.model[segments[i]] instanceof Object) {
-                        return new CONTEXT(<ISalvageModel>this.model[segments[i]], this);
-                    } else {
-                        throw new Error('Failed to create model from segment: ' + segments.slice(i).join('/') );
-                    }
+            } else {
+
+                return this.model[segments[0]] || null;
 
             }
 
         }
+
     }
 
-    public each(variable: string, callback: IContextCallback) {
+    public getHelper( name: string ): I_SALVAGE_HELPER {
 
-        let result = this.get(variable) || [],
-            ctx: CONTEXT;
+        for ( let i=0, len = this.helpers.length; i<len; i++ ) {
+            if ( this.helpers[i].name === name ) {
+                return this.helpers[i];
+            }
+        }
+
+        throw new Error('HELPER "' + name + '" not found!');
+    }
+
+    public isNotEmpty( variable: string ): boolean {
+
+        let result = this.get( variable );
+
+        if ( !result ) {
+            return false;
+        } else {
+
+            if ( result instanceof Array && result.length === 0 ) {
+                return false;
+            }
+
+            return true;
+        }
+
+    }
+
+    public cd(path: string): I_SALVAGE_CONTEXT {
+
+        let segments: string[] = path.split('/');
+
+        if ( segments.length === 1 ) {
+            return new SALVAGE_CONTEXT( this.get( segments[0]  ) || {}, this, this.helpers );
+        } else {
+            return new SALVAGE_CONTEXT( this.get( segments[0] ) || {}, this, this.helpers ).cd( segments.slice(1).join('/') );
+        }
+
+    }
+
+    public each(variable: string, callback: I_SALVAGE_CALLBACK_CONTEXT) {
+
+        let result = this.get(variable) || [];
 
         if ( result && result instanceof Array ) {
 
             for ( let i=0, len = result.length; i<len; i++ ) {
 
-                callback( new CONTEXT( result[i], this ) );
+                callback( new SALVAGE_CONTEXT( result[i], this, this.helpers ) );
 
             }
 
@@ -63,7 +97,7 @@ class CONTEXT implements IContext {
 
     }
 
-    public getParent(): IContext {
+    public getParent(): I_SALVAGE_CONTEXT {
         if (this.parent) {
             return this.parent;
         } else {

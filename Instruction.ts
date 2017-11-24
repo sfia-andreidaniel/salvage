@@ -1,26 +1,26 @@
-abstract class Instruction implements IInstruction {
+abstract class SALVAGE_ABSTRACT_INSTRUCTION implements I_SALVAGE_INSTRUCTION {
 
-    private parent: IInstruction = null;
+    private parent: I_SALVAGE_INSTRUCTION = null;
 
-    private type: ESalvageBlockType;
+    private type: E_SALVAGE_BLOCK_TYPE;
 
-    private params: string[];
+    protected params: string[];
 
-    constructor( type: ESalvageBlockType, params: string[] ) {
+    constructor(type: E_SALVAGE_BLOCK_TYPE, params: string[] ) {
         this.type = type;
         this.params = params;
     }
 
-    public withParent(parent: IInstruction) {
+    public withParent(parent: I_SALVAGE_INSTRUCTION) {
         this.parent = parent;
         return this;
     }
 
-    public getParent(): IInstruction {
+    public getParent(): I_SALVAGE_INSTRUCTION {
         return this.parent;
     }
 
-    public getBlockType(): ESalvageBlockType {
+    public getBlockType(): E_SALVAGE_BLOCK_TYPE {
         return this.type;
     }
 
@@ -30,10 +30,14 @@ abstract class Instruction implements IInstruction {
             : null;
     }
 
+    public setParam( index: number, value: string ) {
+        this.params[ index ] = value;
+    }
+
     abstract allowChildren(): boolean;
 
-    abstract parse(context: IContext): string;
+    abstract parse(context: I_SALVAGE_CONTEXT): string;
 
-    abstract append(instruction: IInstruction): IInstruction;
+    abstract append(instruction: I_SALVAGE_INSTRUCTION): I_SALVAGE_INSTRUCTION;
 
 }
