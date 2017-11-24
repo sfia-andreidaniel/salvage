@@ -647,7 +647,7 @@ class Salvage {
 
             for (let i = resultLength - 1; i > -1; i--) {
 
-                if (result[i] === 'this') {
+                if (result[i] === 'this' && i > 1 ) {
 
                     result.splice(i, 1);
                     resultLength--;

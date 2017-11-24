@@ -18,25 +18,36 @@ class SALVAGE_CONTEXT implements I_SALVAGE_CONTEXT {
 
     public get(variable: string): any {
 
+        if ( 'this' === variable ) {
+            return this.model;
+        }
+
         let segments: string[] = variable.split('/'),
-            numSegments: number = segments.length;
+            numSegments: number = segments.length,
+            result: any;
 
         if ( numSegments > 1 ) {
 
-            return this.cd( segments.slice(0, numSegments - 1 ).join('/') ).get( segments[ numSegments - 1 ] );
+            result = this.cd( segments.slice(0, numSegments - 1 ).join('/') ).get( segments[ numSegments - 1 ] );
 
         } else {
 
             if ( segments[0] == '..' ) {
 
-                return this.getParent().getModel();
+                result = this.getParent().getModel();
 
             } else {
 
-                return this.model[segments[0]] || null;
+                result = this.model[segments[0]];
 
             }
 
+        }
+
+        if ( null === result || undefined === result ) {
+            return '';
+        } else {
+            return result;
         }
 
     }

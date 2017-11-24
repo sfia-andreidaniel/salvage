@@ -97,14 +97,13 @@ var Salvage = (function () {
         for (var i = 0, len = this.instructions.length; i < len; i++) {
             result.push(this.instructions[i].parse(context));
         }
-        window['mo'] = context;
         return result.join('');
     };
     Salvage.readToken = function (startIndex, numChars, buffer) {
         if (buffer.charAt(startIndex) === '{' && buffer.charAt(startIndex + 1) === '{') {
-            var isEsc = false, readStart = startIndex + 2, parsedArguments = [], endOfBlock = false, argument = void 0, fullMatch = '', readLength = void 0, numParsedArguments = 0, isFirstArgumentVariableName = false;
+            var isEsc = true, readStart = startIndex + 2, parsedArguments = [], endOfBlock = false, argument = void 0, fullMatch = '', readLength = void 0, numParsedArguments = 0, isFirstArgumentVariableName = false;
             if (buffer.charAt(startIndex + 2) === '{') {
-                isEsc = true;
+                isEsc = false;
                 readStart++;
                 fullMatch = '{{{';
             }
@@ -139,7 +138,7 @@ var Salvage = (function () {
             startIndex = readStart;
             if (buffer.charAt(startIndex) === '}' && buffer.charAt(startIndex + 1) === '}') {
                 fullMatch += '}}';
-                if (isEsc) {
+                if (!isEsc) {
                     if (buffer.charAt(startIndex + 2) === '}' && parsedArguments.length) {
                         fullMatch += '}';
                         return this.convertArgsToToken(parsedArguments, isEsc, fullMatch);
@@ -249,7 +248,7 @@ var Salvage = (function () {
                         }
                     };
                 }
-                if (isEsc) {
+                if (!isEsc) {
                     return null;
                 }
                 switch (args[0]) {
@@ -257,7 +256,9 @@ var Salvage = (function () {
                     case '#unless':
                         if (argsLength === 2 && this.isValidContextPath(args[1])) {
                             return {
-                                token: E_SALVAGE_BLOCK_TYPE.TOKEN_IF,
+                                token: args[0] === '#if'
+                                    ? E_SALVAGE_BLOCK_TYPE.TOKEN_IF
+                                    : E_SALVAGE_BLOCK_TYPE.TOKEN_UNLESS,
                                 params: [args[1]],
                                 text: fullMatch,
                                 settings: {
@@ -402,7 +403,7 @@ var Salvage = (function () {
                 }
             }
             for (var i = resultLength - 1; i > -1; i--) {
-                if (result[i] === 'this') {
+                if (result[i] === 'this' && i > 1) {
                     result.splice(i, 1);
                     resultLength--;
                 }
@@ -449,7 +450,7 @@ var Salvage = (function () {
             }
         }
     ];
-    Salvage.ARGUMENT_VALID_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./_$#|';
+    Salvage.ARGUMENT_VALID_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./_$#';
     Salvage.VAR_START_CHAR = '$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_';
     Salvage.VAR_OTHER_CHARS = '$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789';
     return Salvage;
@@ -465,17 +466,26 @@ var SALVAGE_CONTEXT = (function () {
         return this.model;
     };
     SALVAGE_CONTEXT.prototype.get = function (variable) {
-        var segments = variable.split('/'), numSegments = segments.length;
+        if ('this' === variable) {
+            return this.model;
+        }
+        var segments = variable.split('/'), numSegments = segments.length, result;
         if (numSegments > 1) {
-            return this.cd(segments.slice(0, numSegments - 1).join('/')).get(segments[numSegments - 1]);
+            result = this.cd(segments.slice(0, numSegments - 1).join('/')).get(segments[numSegments - 1]);
         }
         else {
             if (segments[0] == '..') {
-                return this.getParent().getModel();
+                result = this.getParent().getModel();
             }
             else {
-                return this.model[segments[0]] || null;
+                result = this.model[segments[0]];
             }
+        }
+        if (null === result || undefined === result) {
+            return '';
+        }
+        else {
+            return result;
         }
     };
     SALVAGE_CONTEXT.prototype.getHelper = function (name) {
@@ -646,10 +656,10 @@ var SALVAGE_UNLESS = (function (_super) {
             this.elseAppended = true;
         }
         if (this.elseAppended) {
-            this.trueBranchChildren.push(instruction);
+            this.falseBranchChildren.push(instruction);
         }
         else {
-            this.falseBranchChildren.push(instruction);
+            this.trueBranchChildren.push(instruction);
         }
         return instruction.withParent(this);
     };
@@ -658,7 +668,7 @@ var SALVAGE_UNLESS = (function (_super) {
     };
     SALVAGE_UNLESS.prototype.parse = function (context) {
         var result = '';
-        if (context.get(this.getParam(0))) {
+        if (!context.isNotEmpty(this.getParam(0))) {
             for (var i = 0, len = this.trueBranchChildren.length; i < len; i++) {
                 result = result.concat(this.trueBranchChildren[i].parse(context));
             }
