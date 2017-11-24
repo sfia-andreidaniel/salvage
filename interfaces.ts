@@ -23,7 +23,7 @@ interface I_SALVAGE_BLOCK {
 }
 
 interface I_SALVAGE_MODEL {
-    [ key: string ]: number | string | boolean | null | I_SALVAGE_MODEL | I_SALVAGE_MODEL[];
+    [ key: string ]: number | string | boolean | null | I_SALVAGE_MODEL | I_SALVAGE_MODEL[] | any;
 }
 
 interface I_SALVAGE_CALLBACK_CONTEXT {

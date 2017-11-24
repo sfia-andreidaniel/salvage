@@ -34,11 +34,11 @@ class SALVAGE_UNLESS extends SALVAGE_ABSTRACT_INSTRUCTION {
 
         if ( this.elseAppended ) {
 
-            this.trueBranchChildren.push( instruction );
+            this.falseBranchChildren.push( instruction );
 
         } else {
 
-            this.falseBranchChildren.push( instruction );
+            this.trueBranchChildren.push( instruction );
 
         }
 
@@ -54,7 +54,7 @@ class SALVAGE_UNLESS extends SALVAGE_ABSTRACT_INSTRUCTION {
 
         let result: string = '';
 
-        if ( context.get(this.getParam(0))) {
+        if ( !context.isNotEmpty(this.getParam(0))) {
 
             for (let i = 0, len = this.trueBranchChildren.length; i < len; i++) {
                 result = result.concat(this.trueBranchChildren[i].parse(context));

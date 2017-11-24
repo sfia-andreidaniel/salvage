@@ -19,7 +19,7 @@ class Salvage {
 
     private helpers: I_SALVAGE_HELPER[] = [];
 
-    private static readonly ARGUMENT_VALID_CHARS: string = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./_$#|';
+    private static readonly ARGUMENT_VALID_CHARS: string = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./_$#';
 
     private static readonly VAR_START_CHAR: string = '$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_';
 
@@ -166,8 +166,6 @@ class Salvage {
             result.push(this.instructions[i].parse(context));
         }
 
-        window['mo'] = context;
-
         return result.join('');
 
     }
@@ -176,7 +174,7 @@ class Salvage {
 
         if (buffer.charAt(startIndex) === '{' && buffer.charAt(startIndex + 1) === '{') {
 
-            let isEsc: boolean = false,
+            let isEsc: boolean = true,
                 readStart: number = startIndex + 2,
                 parsedArguments: string[] = [],
                 endOfBlock: boolean = false,
@@ -187,7 +185,7 @@ class Salvage {
                 isFirstArgumentVariableName: boolean = false;
 
             if (buffer.charAt(startIndex + 2) === '{') {
-                isEsc = true;
+                isEsc = false;
                 readStart++;
                 fullMatch = '{{{';
             } else {
@@ -241,7 +239,7 @@ class Salvage {
 
                 fullMatch += '}}';
 
-                if (isEsc) {
+                if (!isEsc) {
 
                     if (buffer.charAt(startIndex + 2) === '}' && parsedArguments.length) {
 
@@ -409,7 +407,7 @@ class Salvage {
 
                 }
 
-                if (isEsc) {
+                if (!isEsc) {
                     return null;
                 }
 
@@ -421,7 +419,9 @@ class Salvage {
                         if (argsLength === 2 && this.isValidContextPath(args[1])) {
 
                             return {
-                                token: E_SALVAGE_BLOCK_TYPE.TOKEN_IF,
+                                token: args[0] === '#if'
+                                    ? E_SALVAGE_BLOCK_TYPE.TOKEN_IF
+                                    : E_SALVAGE_BLOCK_TYPE.TOKEN_UNLESS,
                                 params: [args[1]],
                                 text: fullMatch,
                                 settings: {
