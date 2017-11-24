@@ -1,719 +1,623 @@
+var ESalvageBlockType;
+(function (ESalvageBlockType) {
+    ESalvageBlockType[ESalvageBlockType["TOKEN_VAR"] = 0] = "TOKEN_VAR";
+    ESalvageBlockType[ESalvageBlockType["TOKEN_IF"] = 1] = "TOKEN_IF";
+    ESalvageBlockType[ESalvageBlockType["TOKEN_ELSE"] = 2] = "TOKEN_ELSE";
+    ESalvageBlockType[ESalvageBlockType["TOKEN_UNLESS"] = 3] = "TOKEN_UNLESS";
+    ESalvageBlockType[ESalvageBlockType["TOKEN_EACH"] = 4] = "TOKEN_EACH";
+    ESalvageBlockType[ESalvageBlockType["TOKEN_END"] = 5] = "TOKEN_END";
+    ESalvageBlockType[ESalvageBlockType["TOKEN_TEXT"] = 6] = "TOKEN_TEXT";
+    ESalvageBlockType[ESalvageBlockType["TOKEN_COMMENT"] = 7] = "TOKEN_COMMENT";
+})(ESalvageBlockType || (ESalvageBlockType = {}));
 var Salvage = (function () {
-    function Salvage(contents) {
-        // Parse all blocks.
-        // For special blocks, instantiate special children
-        this.children = [];
-        this.exception = null;
-        try {
-            Salvage.parseBlocks(contents, this.children);
-        }
-        catch (error) {
-            this.exception = error + '';
-        }
+    function Salvage(template) {
+        this.instructions = Salvage.tokenize(template);
     }
-    Salvage.prototype.parse = function (context) {
-        if (this.exception !== null) {
-            return Salvage.toSTRINGSAFE(this.exception);
-        }
-        else {
-            var out = [], i = 0, len = this.children.length, ctx = new SalvageContext(context);
-            for (i = 0; i < len; i++) {
-                out.push(this.children[i].parse(ctx));
-            }
-            return out.join('');
-        }
+    Salvage.createEmptyBlockText = function () {
+        return {
+            token: ESalvageBlockType.TOKEN_TEXT,
+            params: null,
+            settings: null,
+            text: '',
+        };
     };
-    Salvage.callHelper = function (helperName, onValue) {
-        for (var i = 0, len = Salvage.HELPERS.length; i < len; i++) {
-            if (Salvage.HELPERS[i].name == helperName) {
-                return Salvage.HELPERS[i].func(onValue);
-            }
-        }
-        throw "Bad helper name: " + helperName;
-    };
-    Salvage.isPrimitive = function (value) {
-        return Salvage.isNULL(value) ||
-            Salvage.isSTRING(value) ||
-            Salvage.isBOOLEAN(value) ||
-            Salvage.isNUMBER(value);
-    };
-    Salvage.isNULL = function (value) {
-        return value === null || value == void 0;
-    };
-    Salvage.isSTRING = function (value) {
-        return typeof value == 'string';
-    };
-    Salvage.isBOOLEAN = function (value) {
-        return value === true || value === false;
-    };
-    Salvage.isNUMBER = function (value) {
-        return !isNaN(value) && isFinite(value) && (value * 1) === value ? true : false;
-    };
-    Salvage.isComplex = function (value) {
-        return Salvage.isARRAY(value) || Salvage.isOBJECT(value);
-    };
-    Salvage.isARRAY = function (value) {
-        return Salvage.isOBJECT(value) && Salvage.isNUMBER(value.length) ? true : false;
-    };
-    Salvage.isOBJECT = function (value) {
-        return typeof value == 'object' && value && typeof value.prototype == 'undefined' ? true : false;
-    };
-    Salvage.keys = function (value) {
-        var len, i, k, result = null;
-        if (Salvage.isARRAY(value)) {
-            result = [];
-            for (var i = 0, len = ~~(value['length']); i < len; i++) {
-                result.push(String(i));
-            }
-        }
-        else if (Salvage.isOBJECT(value)) {
-            result = [];
-            for (k in value) {
-                if (value.hasOwnProperty(k) && value.propertyIsEnumerable(k)) {
-                    result.push(k);
-                }
-            }
-        }
-        return result;
-    };
-    Salvage.isEMPTY = function (value) {
-        return Salvage.keys(value).length == 0;
-    };
-    Salvage.toSTRING = function (value, decimals, thousandSeparator, decimalSeparator) {
-        if (decimals === void 0) { decimals = null; }
-        if (thousandSeparator === void 0) { thousandSeparator = ''; }
-        if (decimalSeparator === void 0) { decimalSeparator = '.'; }
-        var sub, keys, v, i = 0, len = 0, result = '', isFloat = false, decParts, matches;
-        switch (true) {
-            case Salvage.isNULL(value):
-                result = 'null';
-                break;
-            case Salvage.isSTRING(value):
-                result = String(value);
-                break;
-            case Salvage.isBOOLEAN(value):
-                result = !!(value) ? 'true' : 'false';
-                break;
-            case Salvage.isNUMBER(value):
-                result = (isFloat = Math.round(value) != value)
-                    ? (decimals === null ? String(value) : (decimals === 0 ? String(parseInt(value)) : value.toFixed(decimals))) // is float
-                    : String(value);
-                if (isFloat && (decimalSeparator != '.' || thousandSeparator != '')) {
-                    keys = result.split('.');
-                    decParts = '';
-                    while (matches = /([\d]{3}$)/.exec(keys[0])) {
-                        decParts = keys[0].length > 3
-                            ? thousandSeparator + matches[1] + decParts
-                            : matches[1] + decParts;
-                        keys[0] = keys[0].replace(/[\d]{3}$/, '');
-                    }
-                    if (keys[0].length)
-                        decParts = decParts.length ? keys[0] + decParts : keys[0];
-                    result = keys[1] ? decParts + decimalSeparator + keys[1] : decParts;
-                }
-                break;
-            case Salvage.isARRAY(value):
-                if (value.length) {
-                    sub = [];
-                    for (i = 0, len = ~~value.length; i < len; i++) {
-                        v = Salvage.toSTRING(value[i], decimals, thousandSeparator, decimalSeparator);
-                        if (v != '') {
-                            sub.push(v);
-                        }
-                    }
-                    result = sub.length ? '[ ' + sub.join(', ') + ']' : '';
-                }
-                else {
-                    result = '';
-                }
-                break;
-            case Salvage.isOBJECT(value):
-                keys = Salvage.keys(value);
-                if (keys.length) {
-                    sub = [];
-                    for (i = 0, len = keys.length; i < len; i++) {
-                        v = Salvage.toSTRING(value[keys[i]], decimals, thousandSeparator, decimalSeparator);
-                        if (v != '') {
-                            sub.push(keys[i] + ': ' + v);
-                        }
-                    }
-                    result = sub.length ? '[ ' + sub.join(', ') + ']' : '';
-                }
-                else {
-                    result = '';
-                }
-                break;
-            default:
-                result = '';
-                break;
-        }
-        return result;
-    };
-    Salvage.toSTRINGSAFE = function (value, decimals, thousandSeparator, decimalSeparator) {
-        if (decimals === void 0) { decimals = null; }
-        if (thousandSeparator === void 0) { thousandSeparator = ''; }
-        if (decimalSeparator === void 0) { decimalSeparator = '.'; }
-        return Salvage.toSTRING(value, decimals, thousandSeparator, decimalSeparator).replace(/"/, '&quot;').replace(/>/g, '&gt;').replace(/</g, '&lt;');
-    };
-    Salvage.getHELPERS = function (helpersList) {
-        if (helpersList === void 0) { helpersList = null; }
-        helpersList = String(helpersList || '').replace(/(^[\s\|]+|[\s\|]+$)/g, '');
-        if (!helpersList.length) {
-            return null;
-        }
-        var out = helpersList.split(/[\s\|]+/), i, j, len, n = Salvage.HELPERS.length, good;
-        if (out.length) {
-            for (i = 0, len = out.length; i < len; i++) {
-                good = false;
-                for (j = 0; j < n; j++) {
-                    if (Salvage.HELPERS[j].name == out[i]) {
-                        good = true;
-                        break;
-                    }
-                }
-                if (!good) {
-                    throw "Invalid helper name: " + JSON.stringify(out[i]);
-                }
-            }
-        }
-        return out.length ? out : null;
-    };
-    Salvage.parseBlocks = function (contents, destination, ownerBlock) {
-        if (destination === void 0) { destination = []; }
-        if (ownerBlock === void 0) { ownerBlock = null; }
-        var lastBlock = null, raw = contents || '', i = 0, entities = Salvage.ENTITIES.length, isText = false, entityType = '', matches = [], matchIndex = 0, decimals, helpers = null;
-        while (true) {
-            isText = true;
-            entityType = '';
-            matchIndex = 0;
-            for (i = 0; i < entities; i++) {
-                matches = Salvage.ENTITIES[i].expr.exec(raw);
-                if (matches) {
-                    // good. we found an entity.
-                    entityType = Salvage.ENTITIES[i].type;
-                    matchIndex = Salvage.ENTITIES[i].match;
-                    isText = false;
-                    break;
-                }
-            }
-            if (!isText) {
-                switch (entityType) {
-                    case 'end':
-                        if (!ownerBlock || ['if', 'each', 'with', 'unless'].indexOf(ownerBlock.type) == -1) {
-                            throw "An 'end' block can be placed only after an 'if', 'unless', 'each', or 'with' block!";
-                        }
-                        // flush end
-                        raw = raw.substr(matches[0].length);
-                        return raw;
-                        break;
-                    case 'var':
-                    case 'rawVar':
-                        decimals = (matches[6] || '').length
-                            ? ~~matches[6]
-                            : null;
-                        helpers = Salvage.getHELPERS(matches[8]);
-                        raw = raw.substr(matches[0].length);
-                        destination.push(lastBlock = new SalvageBlockVar(matches[matchIndex] /* varname */, entityType == 'var' /* escaped */, decimals, helpers));
-                        break;
-                    case 'if':
-                        raw = raw.substr(matches[0].length);
-                        destination.push(lastBlock = new SalvageBlockIf(SalvageContext.parsePATH(matches[matchIndex]) /* condition */, raw));
-                        raw = lastBlock.unconsumedRawText;
-                        break;
-                    case 'unless':
-                        raw = raw.substr(matches[0].length);
-                        destination.push(lastBlock = new SalvageBlockIf(SalvageContext.parsePATH(matches[matchIndex]) /* condition */, raw, true));
-                        raw = lastBlock.unconsumedRawText;
-                        break;
-                    case 'with':
-                        raw = raw.substr(matches[0].length);
-                        destination.push(lastBlock = new SalvageBlockContext(SalvageContext.parsePATH(matches[matchIndex]) /* condition */, raw));
-                        raw = lastBlock.unconsumedRawText;
-                        break;
-                    case 'else':
-                        raw = raw.substr(matches[0].length);
-                        if (!ownerBlock || ownerBlock.type != 'if')
-                            throw "An 'else' block can be placed only inside of an 'if' block!";
-                        ownerBlock.onParseElse();
-                        // put a NULL block delimiter
-                        destination.push(null);
-                        lastBlock = null;
-                        break;
-                    case 'each':
-                        raw = raw.substr(matches[0].length);
-                        destination.push(lastBlock = new SalvageBlockEach(SalvageContext.parsePATH(matches[matchIndex]) /* condition */, raw, matches[4] || null));
-                        raw = lastBlock.unconsumedRawText;
-                        break;
-                    case 'comment':
-                        // comments are ignored from the start in the loading mechanism.
-                        raw = raw.substr(matches[0].length);
-                        break;
-                    default:
-                        throw 'Bad entity type: ' + entityType;
-                }
+    Salvage.tokenize = function (template) {
+        console.time('tokenize');
+        var charIndex = 0, numChars = template.length, leftChars = numChars - charIndex, block = null, ch, readResult, blockTextLength, blocks = [], instructions = [];
+        while (charIndex < numChars) {
+            ch = template.charAt(charIndex);
+            if ('{' === ch) {
+                readResult = this.readToken(charIndex, numChars, template);
             }
             else {
-                if (raw.length) {
-                    if (lastBlock && lastBlock.type == 'text') {
-                        lastBlock.append(raw[0]); //good.
+                readResult = null;
+            }
+            if (!readResult) {
+                block = block || Salvage.createEmptyBlockText();
+                block.text += ch;
+                charIndex++;
+                leftChars--;
+            }
+            else {
+                if (block) {
+                    blocks.push(block);
+                }
+                block = {
+                    text: readResult.text,
+                    token: readResult.token,
+                    params: readResult.params,
+                    settings: readResult.settings,
+                };
+                blocks.push(block);
+                blockTextLength = block.text.length;
+                charIndex += blockTextLength;
+                leftChars -= blockTextLength;
+                block = null;
+            }
+        }
+        if (block) {
+            blocks.push(block);
+        }
+        if (!blocks.length) {
+            return [];
+        }
+        var pointer, pointerParent;
+        instructions.push(pointer = this.createInstructionFromBlock(blocks[0]));
+        for (var i = 1, len = blocks.length; i < len; i++) {
+            if (null == pointer) {
+                instructions.push(pointer = this.createInstructionFromBlock(blocks[i]));
+            }
+            else {
+                if (pointer.allowChildren()) {
+                    pointer = pointer.append(this.createInstructionFromBlock(blocks[i]));
+                }
+                else {
+                    pointerParent = pointer.getParent();
+                    if (null === pointerParent) {
+                        instructions.push(pointer = this.createInstructionFromBlock(blocks[i]));
                     }
                     else {
-                        destination.push(lastBlock = new SalvageBlockText());
-                        lastBlock.append(raw[0]); //good.
+                        pointer = pointerParent;
+                        pointer = pointer.append(this.createInstructionFromBlock(blocks[i]));
                     }
-                    raw = raw.substr(1);
-                }
-                else {
-                    break; // break main loop
                 }
             }
         }
-        return raw;
+        console.log(instructions);
+        console.timeEnd('tokenize');
+        return instructions;
     };
-    Salvage.HELPERS = [
-        {
-            "name": "upper",
-            "func": function (s) {
-                return String(s || '').toUpperCase();
-            }
-        },
-        {
-            "name": "lower",
-            "func": function (s) {
-                return String(s || '').toLowerCase();
-            }
+    Salvage.prototype.parse = function (model) {
+        var result = [], context = new CONTEXT(model);
+        for (var i = 0, len = this.instructions.length; i < len; i++) {
+            result.push(this.instructions[i].parse(context));
         }
-    ];
-    Salvage.ENTITIES = [
-        {
-            "type": "var",
-            "expr": /^\{\{([\s]+)?([a-z\d\.\[\]\/_\$]+)([\s]+)?(\:([\s]+)?([\d]+)([\s]+)?)?((([\s]+)?\|([\s]+)?([a-z\d_\$]+))+)?([\s]+)?\}\}/i,
-            "match": 2
-        },
-        {
-            "type": "rawVar",
-            "expr": /^\{\{\{([\s]+)?([a-z\d\.\[\]\/_\$]+)([\s]+)?(\:([\s]+)?([\d]+)([\s]+)?)?((([\s]+)?\|([\s]+)?([a-z\d_\$]+))+)?([\s]+)?\}\}\}/i,
-            "match": 2
-        },
-        {
-            "type": "if",
-            "expr": /^\{\{([\s]+)?#if[\s]+([a-z\d\.\[\]\/_\$]+)([\s]+)?\}\}/i,
-            "match": 2
-        },
-        {
-            "type": "unless",
-            "expr": /^\{\{([\s]+)?#unless[\s]+([a-z\d\.\[\]\/_\$]+)([\s]+)?\}\}/i,
-            "match": 2
-        },
-        {
-            "type": "else",
-            "expr": /^\{\{([\s]+)?#else([\s]+)?\}\}/i,
-            "match": 0
-        },
-        {
-            "type": "end",
-            "expr": /^\{\{([\s]+)?#end([\s]+)?\}\}/i,
-            "match": 0
-        },
-        {
-            "type": "each",
-            "expr": /^\{\{([\s]+)?#each([\s]+)(([a-z\$\_]+([a-z\$\_\d]+)?)[\s]+in[\s]+)?([a-z\d\.\[\]\/_\$]+)([\s]+)?\}\}/i,
-            "match": 6
-        },
-        {
-            "type": "with",
-            "expr": /^\{\{([\s]+)?#with[\s]+([a-z\d\.\[\]\/_\$]+)([\s]+)?\}\}/i,
-            "match": 2
-        },
-        {
-            "type": "comment",
-            "expr": /^\{\{\!--[\s\S]+?--\}\}/i,
-            "match": 0
-        }
-    ];
-    return Salvage;
-})();
-var SalvageBlock = (function () {
-    function SalvageBlock(parent) {
-        if (parent === void 0) { parent = null; }
-        this.parent = parent;
-    }
-    Object.defineProperty(SalvageBlock.prototype, "type", {
-        get: function () {
-            return '';
-        },
-        enumerable: true,
-        configurable: true
-    });
-    Object.defineProperty(SalvageBlock.prototype, "unconsumedRawText", {
-        get: function () {
-            return '';
-        },
-        enumerable: true,
-        configurable: true
-    });
-    SalvageBlock.prototype.parse = function (context) {
-        return '';
+        return result.join('');
     };
-    return SalvageBlock;
-})();
-var __extends = (this && this.__extends) || function (d, b) {
-    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
-    function __() { this.constructor = d; }
-    __.prototype = b.prototype;
-    d.prototype = new __();
-};
-var SalvageBlockVar = (function (_super) {
-    __extends(SalvageBlockVar, _super);
-    function SalvageBlockVar(varName, escaped, decimals, helpers) {
-        if (escaped === void 0) { escaped = false; }
-        if (decimals === void 0) { decimals = null; }
-        if (helpers === void 0) { helpers = null; }
-        _super.call(this);
-        this.varName = '';
-        this.isEsc = false;
-        this.decimals = null;
-        this.helpers = null;
-        this.varName = varName;
-        this.isEsc = escaped;
-        this.decimals = decimals;
-        this.helpers = helpers;
-    }
-    SalvageBlockVar.prototype.parse = function (context) {
-        var result = '', i = 0, len = 0;
-        result = Salvage.toSTRING(context.getByPath(this.varName), this.decimals);
-        if (this.helpers) {
-            for (i = 0, len = this.helpers.length; i < len; i++) {
-                result = Salvage.callHelper(this.helpers[i], result);
-            }
-        }
-        if (this.isEsc) {
-            result = Salvage.toSTRINGSAFE(result);
-        }
-        return result;
-    };
-    return SalvageBlockVar;
-})(SalvageBlock);
-var SalvageBlockText = (function (_super) {
-    __extends(SalvageBlockText, _super);
-    function SalvageBlockText() {
-        _super.call(this);
-        this._text = '';
-    }
-    SalvageBlockText.prototype.append = function (character) {
-        this._text = this._text + character;
-    };
-    Object.defineProperty(SalvageBlockText.prototype, "type", {
-        get: function () {
-            return 'text';
-        },
-        enumerable: true,
-        configurable: true
-    });
-    SalvageBlockText.prototype.parse = function (ctx) {
-        return this._text;
-    };
-    return SalvageBlockText;
-})(SalvageBlock);
-var SalvageBlockIf = (function (_super) {
-    __extends(SalvageBlockIf, _super);
-    function SalvageBlockIf(condition, contents, isUnless) {
-        if (isUnless === void 0) { isUnless = false; }
-        _super.call(this);
-        this.isUnless = isUnless;
-        this._condition = null;
-        this._raw = '';
-        this._else = false;
-        this.ifchildren = [];
-        this.elsechildren = [];
-        this._condition = condition;
-        var children = [];
-        this._raw = Salvage.parseBlocks(contents, children, this);
-        if (children.indexOf(null) == -1) {
-            this.ifchildren = children;
-        }
-        else {
-            this.ifchildren = children.slice(0, children.indexOf(null));
-            this.elsechildren = children.slice(children.indexOf(null) + 1);
-        }
-    }
-    SalvageBlockIf.prototype.onParseElse = function () {
-        if (this._else) {
-            throw "Multiple else clauses cannot be added inside of an 'if' clause!";
-        }
-        this._else = true;
-    };
-    Object.defineProperty(SalvageBlockIf.prototype, "type", {
-        get: function () {
-            return 'if';
-        },
-        enumerable: true,
-        configurable: true
-    });
-    Object.defineProperty(SalvageBlockIf.prototype, "unconsumedRawText", {
-        get: function () {
-            var result = this._raw;
-            this._raw = '';
-            return result;
-        },
-        enumerable: true,
-        configurable: true
-    });
-    SalvageBlockIf.prototype.parse = function (context) {
-        var out = [], data = context.get(this._condition), i = 0, len;
-        var ifBranchEval = ((Salvage.isPrimitive(data) && !!(data)) || (Salvage.isComplex(data) && !Salvage.isEMPTY(data)));
-        if (this.isUnless)
-            ifBranchEval = !ifBranchEval;
-        if (ifBranchEval) {
-            for (i = 0, len = this.ifchildren.length; i < len; i++) {
-                out.push(this.ifchildren[i].parse(context));
-            }
-        }
-        else {
-            for (i = 0, len = this.elsechildren.length; i < len; i++) {
-                out.push(this.elsechildren[i].parse(context));
-            }
-        }
-        return out.join('');
-    };
-    return SalvageBlockIf;
-})(SalvageBlock);
-var SalvageBlockEach = (function (_super) {
-    __extends(SalvageBlockEach, _super);
-    function SalvageBlockEach(condition, contents, keyName) {
-        if (keyName === void 0) { keyName = null; }
-        _super.call(this);
-        this._raw = '';
-        this.cd = [];
-        this.keyName = null;
-        this.children = [];
-        this.cd = condition;
-        this.keyName = keyName;
-        this._raw = Salvage.parseBlocks(contents, this.children, this);
-    }
-    Object.defineProperty(SalvageBlockEach.prototype, "type", {
-        get: function () {
-            return 'each';
-        },
-        enumerable: true,
-        configurable: true
-    });
-    Object.defineProperty(SalvageBlockEach.prototype, "unconsumedRawText", {
-        get: function () {
-            var out = this._raw;
-            this._raw = ''; // free mem
-            return out;
-        },
-        enumerable: true,
-        configurable: true
-    });
-    SalvageBlockEach.prototype.makeKey = function (value) {
-        var o = {};
-        o[this.keyName] = value;
-        return o;
-    };
-    SalvageBlockEach.prototype.parse = function (context) {
-        var out = [], ctx = context.cd(this.cd), root = ctx.get(null), i, j = 0, len, n, keys = [], item, n = this.children.length;
-        if (!Salvage.isEMPTY(root)) {
-            keys = Salvage.keys(root);
-            len = keys.length;
-            for (i = 0; i < len; i++) {
-                item = this.keyName === null
-                    ? new SalvageContext(root[keys[i]], ctx.cd(['..']))
-                    : new SalvageContext(root[keys[i]], ctx.cd(['..']), this.makeKey(keys[i]));
-                for (j = 0; j < n; j++) {
-                    out.push(this.children[j].parse(item));
-                }
-            }
-        }
-        return out.join('');
-    };
-    return SalvageBlockEach;
-})(SalvageBlock);
-var SalvageBlockContext = (function (_super) {
-    __extends(SalvageBlockContext, _super);
-    function SalvageBlockContext(condition, contents) {
-        _super.call(this);
-        this._raw = '';
-        this.cd = [];
-        this.children = [];
-        this.cd = condition;
-        this._raw = Salvage.parseBlocks(contents, this.children, this);
-    }
-    Object.defineProperty(SalvageBlockContext.prototype, "type", {
-        get: function () {
-            return 'with';
-        },
-        enumerable: true,
-        configurable: true
-    });
-    Object.defineProperty(SalvageBlockContext.prototype, "unconsumedRawText", {
-        get: function () {
-            var out = this._raw;
-            this._raw = ''; // free mem
-            return out;
-        },
-        enumerable: true,
-        configurable: true
-    });
-    SalvageBlockContext.prototype.parse = function (context) {
-        var out = [], ctx = context.cd(this.cd), i = 0, len = this.children.length;
-        for (i = 0; i < len; i++) {
-            out.push(this.children[i].parse(ctx));
-        }
-        return out.join('');
-    };
-    return SalvageBlockContext;
-})(SalvageBlock);
-var SalvageContext = (function () {
-    function SalvageContext(root, owner, assignedKeys) {
-        if (owner === void 0) { owner = null; }
-        if (assignedKeys === void 0) { assignedKeys = null; }
-        this.root = null;
-        this.owner = null;
-        this.assigned = null;
-        this.root = root;
-        this.owner = owner;
-        this.assigned = assignedKeys || {};
-    }
-    SalvageContext.prototype.cd = function (path) {
-        if (path === void 0) { path = []; }
-        if (path.length == 0)
-            return this;
-        var cursor = this, i = 0, len = path.length;
-        while (path[i] == '..') {
-            if (!cursor.owner) {
-                throw "Illegal path!";
-            }
-            cursor = cursor.owner;
-            i++;
-        }
-        while (i < len) {
-            if (path[i] == '..') {
-                if (!cursor.owner) {
-                    throw "Illegal path!";
-                }
-                cursor = cursor.owner;
-            }
-            else if (path[i] == 'this' && i == 0) {
+    Salvage.readToken = function (startIndex, numChars, buffer) {
+        if (buffer.charAt(startIndex) === '{' && buffer.charAt(startIndex + 1) === '{') {
+            var isEsc = false, readStart = startIndex + 2, parsedArguments = [], endOfBlock = false, argument = void 0, fullMatch = '', readLength = void 0;
+            if (buffer.charAt(startIndex + 2) === '{') {
+                isEsc = true;
+                readStart++;
+                fullMatch = '{{{';
             }
             else {
-                if (!Salvage.isComplex(cursor.root) || typeof cursor.root[path[i]] == 'undefined') {
-                    throw "Illegal path!";
-                }
-                cursor = new SalvageContext(cursor.root[path[i]], cursor);
+                fullMatch = '{{';
             }
-            i++;
-        }
-        return cursor;
-    };
-    SalvageContext.prototype.get = function (propertyName) {
-        if (propertyName === void 0) { propertyName = null; }
-        if (propertyName === null || propertyName.length == 0) {
-            return this.root;
-        }
-        else {
-            if (propertyName.length > 1) {
-                return this.cd(propertyName.slice(0, propertyName.length - 1)).get([propertyName[propertyName.length - 1]]);
-            }
-            else {
-                if (typeof this.assigned[propertyName[0]] != 'undefined') {
-                    return this.assigned[propertyName[0]];
+            while (!endOfBlock) {
+                fullMatch += (this.repeat(' ', readLength = this.readSpaces(buffer, readStart)));
+                readStart += readLength;
+                argument = this.readArgument(buffer, readStart);
+                readLength = argument.length;
+                if (readLength) {
+                    fullMatch += argument;
+                    readStart += readLength;
+                    readStart += (readLength = this.readSpaces(buffer, readStart));
+                    fullMatch += this.repeat(' ', readLength);
+                    parsedArguments.push(argument);
                 }
                 else {
-                    return Salvage.isComplex(this.root)
-                        ? this.root[propertyName[0]]
-                        : (propertyName[0] == 'this'
-                            ? this.root
-                            : '');
+                    endOfBlock = true;
                 }
             }
-        }
-    };
-    SalvageContext.prototype.getByPath = function (path) {
-        var parts = SalvageContext.parsePATH(path);
-        if (parts === null)
-            return null;
-        return this.get(parts);
-    };
-    SalvageContext.parsePATH = function (s) {
-        var parts = [], raw = s, name = '', matches, i = 0, len = 0, optimized;
-        if (!/^[a-z\d\.\[\]\/_\$]+/i.test(s)) {
-            return null;
-        }
-        while (raw) {
-            name = null;
-            for (i = 0; i < 3; i++) {
-                matches = SalvageContext.tokens[i].expr.exec(raw);
-                if (matches) {
-                    name = matches[SalvageContext.tokens[i].match];
-                    break;
-                }
-            }
-            if (name !== null) {
-                parts.push(name);
-                raw = raw.substr(matches[0].length);
-                // check next ...
-                if (raw != '') {
-                    matches = /^(\.|\/|\[)/.exec(raw);
-                    if (!matches) {
+            startIndex = readStart;
+            if (buffer.charAt(startIndex) === '}' && buffer.charAt(startIndex + 1) === '}') {
+                fullMatch += '}}';
+                if (isEsc) {
+                    if (buffer.charAt(startIndex + 2) === '}' && parsedArguments.length) {
+                        fullMatch += '}';
+                        return this.convertArgsToToken(parsedArguments, isEsc, fullMatch);
+                    }
+                    else {
                         return null;
                     }
-                    else {
-                        if (matches[0] != '[') {
-                            raw = raw.substr(matches[0].length);
-                        }
+                }
+                else {
+                    if (parsedArguments.length > 0) {
+                        return this.convertArgsToToken(parsedArguments, isEsc, fullMatch);
                     }
-                    if (raw == '') {
+                    else {
                         return null;
                     }
                 }
             }
+        }
+        else {
+            return null;
+        }
+    };
+    Salvage.readSpaces = function (buffer, readStart) {
+        var count = 0, ch;
+        while (ch = buffer.charAt(readStart)) {
+            if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t') {
+                count++;
+                readStart++;
+            }
             else {
+                break;
+            }
+        }
+        return count;
+    };
+    Salvage.readArgument = function (buffer, readStart) {
+        var result = '', ch;
+        while (ch = buffer.charAt(readStart)) {
+            if (Salvage.ARGUMENT_VALID_CHARS.indexOf(ch) > -1) {
+                result += ch;
+                readStart++;
+            }
+            else {
+                break;
+            }
+        }
+        return result;
+    };
+    Salvage.convertArgsToToken = function (args, isEsc, fullMatch) {
+        var argsLength = args.length;
+        if (0 === argsLength) {
+            return null;
+        }
+        else {
+            if (argsLength === 1) {
+                if (!this.isReservedKeyword(args[0])) {
+                    return {
+                        text: fullMatch,
+                        params: args,
+                        token: ESalvageBlockType.TOKEN_VAR,
+                        settings: {
+                            escaped: isEsc,
+                        }
+                    };
+                }
+                if (args[0] === '#end' || args[0] === '#else') {
+                    return {
+                        text: fullMatch,
+                        params: null,
+                        token: args[0] === '#end'
+                            ? ESalvageBlockType.TOKEN_END
+                            : ESalvageBlockType.TOKEN_ELSE,
+                        settings: null,
+                    };
+                }
                 return null;
             }
-        }
-        /* Optimize ... */
-        do {
-            optimized = true;
-            for (i = 1, len = parts.length; i < len; i++) {
-                if (parts[i] == '..' && parts[i - 1] != '..') {
-                    parts.splice(i - 1, 2);
-                    optimized = false;
-                    break;
+            else {
+                if (!this.isReservedKeyword(args[0])) {
+                    return null;
+                }
+                if (isEsc) {
+                    return null;
+                }
+                switch (args[0]) {
+                    case '#if':
+                    case '#unless':
+                        if (argsLength === 2 && this.isValidContextPath(args[1])) {
+                            return {
+                                token: ESalvageBlockType.TOKEN_IF,
+                                params: [args[1]],
+                                text: fullMatch,
+                                settings: {
+                                    negated: args[0] === '#unless',
+                                },
+                            };
+                        }
+                        return null;
+                    case '#each':
+                        if (argsLength === 2 && this.isValidContextPath(args[1])) {
+                            return {
+                                token: ESalvageBlockType.TOKEN_EACH,
+                                params: [args[1]],
+                                text: fullMatch,
+                                settings: null,
+                            };
+                        }
+                        else {
+                            if (argsLength === 4 && args[2] === 'in' && this.isValidContextPath(args[1]) && this.isValidVariableName(args[3])) {
+                                return {
+                                    token: ESalvageBlockType.TOKEN_EACH,
+                                    params: [args[1], args[3]],
+                                    text: fullMatch,
+                                    settings: null,
+                                };
+                            }
+                        }
+                        return null;
+                    case '#with':
+                        if (argsLength === 2) {
+                            if (this.isValidContextPath(args[1])) {
+                                return {
+                                    token: ESalvageBlockType.TOKEN_UNLESS,
+                                    params: [args[1]],
+                                    text: fullMatch,
+                                    settings: null,
+                                };
+                            }
+                        }
+                        return null;
+                    default:
+                        throw new Error('Invalid keyword: ' + args[0]);
                 }
             }
-        } while (!optimized);
-        if (!parts.length) {
-            return ['this'];
         }
-        return parts;
     };
-    SalvageContext.tokens = [
-        {
-            "name": "normal",
-            "expr": /^[a-z_\$]([a-z_\$\d]+)?/i,
-            "match": 0
-        },
-        {
-            "name": "enclosed",
-            "expr": /^\[([a-z_\$]([a-z_\$\d]+)?)\]/i,
-            "match": 1
-        },
-        {
-            "name": "dotdot",
-            "expr": /^\.\./,
-            "match": 0
+    Salvage.isReservedKeyword = function (string) {
+        return string === '#if' || string === '#each' || string === '#unless' || string === '#else' || string === '#end';
+    };
+    Salvage.isValidContextPath = function (string) {
+        if (!string) {
+            return false;
         }
-    ];
-    return SalvageContext;
+        var segments = string.split('/');
+        for (var i = 0, len = segments.length; i < len; i++) {
+            if (!(segments[i] === '.' || segments[i] === '..' || this.isValidVariableName(segments[i]))) {
+                return false;
+            }
+        }
+        return true;
+    };
+    Salvage.isValidVariableName = function (string) {
+        if (!string) {
+            return false;
+        }
+        else {
+            if (Salvage.VAR_START_CHAR.indexOf(string.charAt(0))) {
+                for (var i = 1, len = string.length; i < len; i++) {
+                    if (Salvage.VAR_OTHER_CHARS.indexOf(string.charAt(i)) === -1) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+    };
+    Salvage.repeat = function (ch, len) {
+        var result = '';
+        for (var i = 0; i < len; i++) {
+            result = result + ch;
+        }
+        return result;
+    };
+    Salvage.createInstructionFromBlock = function (block) {
+        switch (block.token) {
+            case ESalvageBlockType.TOKEN_IF:
+                return new IF(block.params);
+            case ESalvageBlockType.TOKEN_UNLESS:
+                return new UNLESS(block.params);
+            case ESalvageBlockType.TOKEN_END:
+                return new END();
+            case ESalvageBlockType.TOKEN_TEXT:
+                return new TEXT(block.text);
+            case ESalvageBlockType.TOKEN_VAR:
+                return new VAR(block.params, block.settings.escaped);
+            case ESalvageBlockType.TOKEN_EACH:
+                return new EACH(block.params);
+            case ESalvageBlockType.TOKEN_ELSE:
+                return new ELSE();
+            default:
+                throw new Error('Unknown block type: ' + JSON.stringify(block));
+        }
+    };
+    Salvage.ARGUMENT_VALID_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./_$#|';
+    Salvage.VAR_START_CHAR = '$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_';
+    Salvage.VAR_OTHER_CHARS = '$abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789';
+    return Salvage;
+}());
+var CONTEXT = (function () {
+    function CONTEXT(model, parent) {
+        this.parent = null;
+        this.model = model;
+        this.parent = parent || null;
+    }
+    CONTEXT.prototype.get = function (variable) {
+        return this.model && this.model[variable]
+            ? this.model[variable]
+            : null;
+    };
+    CONTEXT.prototype.cd = function (path) {
+        var segments = path.split('/'), cursor = this;
+        for (var i = 0, len = segments.length; i < len; i++) {
+            switch (segments[i]) {
+                case '.':
+                case 'this':
+                case '':
+                    break;
+                case '..':
+                    cursor = cursor.getParent();
+                    break;
+                default:
+                    if (this.model[segments[i]] && this.model[segments[i]] instanceof Object) {
+                        return new CONTEXT(this.model[segments[i]], this);
+                    }
+                    else {
+                        throw new Error('Failed to create model from segment: ' + segments.slice(i).join('/'));
+                    }
+            }
+        }
+    };
+    CONTEXT.prototype.each = function (variable, callback) {
+        var result = this.get(variable) || [], ctx;
+        if (result && result instanceof Array) {
+            for (var i = 0, len = result.length; i < len; i++) {
+                callback(new CONTEXT(result[i], this));
+            }
+        }
+    };
+    CONTEXT.prototype.getParent = function () {
+        if (this.parent) {
+            return this.parent;
+        }
+        else {
+            throw new Error('Failed to get context parent!');
+        }
+    };
+    return CONTEXT;
+}());
+var Instruction = (function () {
+    function Instruction(type, params) {
+        this.parent = null;
+        this.type = type;
+        this.params = params;
+    }
+    Instruction.prototype.withParent = function (parent) {
+        this.parent = parent;
+        return this;
+    };
+    Instruction.prototype.getParent = function () {
+        return this.parent;
+    };
+    Instruction.prototype.getBlockType = function () {
+        return this.type;
+    };
+    Instruction.prototype.getParam = function (index) {
+        return this.params
+            ? this.params[index] || null
+            : null;
+    };
+    return Instruction;
+}());
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = Object.setPrototypeOf ||
+        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
 })();
-/// <reference path="Salvage.ts" />
-/// <reference path="SalvageBlock.ts" />
-/// <reference path="SalvageBlock.ts" />
-/// <reference path="SalvageBlockVar.ts" />
-/// <reference path="SalvageBlockText.ts" />
-/// <reference path="SalvageBlockIf.ts" />
-/// <reference path="SalvageBlockEach.ts" />
-/// <reference path="SalvageBlockContext.ts" />
-/// <reference path="SalvageContext.ts" /> 
+var IF = (function (_super) {
+    __extends(IF, _super);
+    function IF(params) {
+        var _this = _super.call(this, ESalvageBlockType.TOKEN_IF, params) || this;
+        _this.elseAppended = false;
+        _this.trueBranchChildren = [];
+        _this.falseBranchChildren = [];
+        return _this;
+    }
+    IF.prototype.append = function (instruction) {
+        if (instruction.getBlockType() === ESalvageBlockType.TOKEN_ELSE) {
+            if (this.elseAppended) {
+                throw new Error('Else appended!');
+            }
+            else {
+                this.elseAppended = true;
+            }
+            return this;
+        }
+        else {
+            if (instruction.getBlockType() === ESalvageBlockType.TOKEN_END) {
+                return this.getParent();
+            }
+            else {
+                instruction.withParent(this);
+                if (this.elseAppended) {
+                    this.falseBranchChildren.push(instruction.withParent(this));
+                }
+                else {
+                    this.trueBranchChildren.push(instruction.withParent(this));
+                }
+                return instruction.allowChildren()
+                    ? instruction
+                    : this;
+            }
+        }
+    };
+    IF.prototype.allowChildren = function () {
+        return true;
+    };
+    IF.prototype.parse = function (context) {
+        var result = '';
+        if (context.get(this.getParam(0))) {
+            for (var i = 0, len = this.trueBranchChildren.length; i < len; i++) {
+                result = result.concat(this.trueBranchChildren[i].parse(context));
+            }
+        }
+        else {
+            for (var i = 0, len = this.falseBranchChildren.length; i < len; i++) {
+                result = result.concat(this.falseBranchChildren[i].parse(context));
+            }
+        }
+        return result;
+    };
+    return IF;
+}(Instruction));
+var END = (function (_super) {
+    __extends(END, _super);
+    function END() {
+        return _super.call(this, ESalvageBlockType.TOKEN_END, null) || this;
+    }
+    END.prototype.allowChildren = function () {
+        return false;
+    };
+    END.prototype.parse = function (context) {
+        return '';
+    };
+    END.prototype.append = function (instruction) {
+        throw new Error('Cannot append something into a END block!');
+    };
+    return END;
+}(Instruction));
+var UNLESS = (function (_super) {
+    __extends(UNLESS, _super);
+    function UNLESS(params) {
+        var _this = _super.call(this, ESalvageBlockType.TOKEN_UNLESS, params) || this;
+        _this.elseAppended = false;
+        _this.trueBranchChildren = [];
+        _this.falseBranchChildren = [];
+        return _this;
+    }
+    UNLESS.prototype.append = function (instruction) {
+        if (instruction.getBlockType() === ESalvageBlockType.TOKEN_ELSE) {
+            if (this.elseAppended) {
+                throw new Error('Else appended!');
+            }
+            else {
+                this.elseAppended = true;
+            }
+            return this;
+        }
+        else {
+            if (instruction.getBlockType() === ESalvageBlockType.TOKEN_END) {
+                return this.getParent();
+            }
+            else {
+                instruction.withParent(this);
+                if (this.elseAppended) {
+                    this.falseBranchChildren.push(instruction);
+                }
+                else {
+                    this.trueBranchChildren.push(instruction);
+                }
+                return instruction.allowChildren()
+                    ? instruction
+                    : this;
+            }
+        }
+    };
+    UNLESS.prototype.allowChildren = function () {
+        return true;
+    };
+    UNLESS.prototype.parse = function (context) {
+        var result = '';
+        if (!context.get(this.getParam(0))) {
+            for (var i = 0, len = this.trueBranchChildren.length; i < len; i++) {
+                result = result.concat(this.trueBranchChildren[i].parse(context));
+            }
+        }
+        else {
+            for (var i = 0, len = this.falseBranchChildren.length; i < len; i++) {
+                result = result.concat(this.falseBranchChildren[i].parse(context));
+            }
+        }
+        return result;
+    };
+    return UNLESS;
+}(Instruction));
+var TEXT = (function (_super) {
+    __extends(TEXT, _super);
+    function TEXT(text) {
+        var _this = _super.call(this, ESalvageBlockType.TOKEN_TEXT, null) || this;
+        _this.text = text;
+        return _this;
+    }
+    TEXT.prototype.allowChildren = function () {
+        return false;
+    };
+    TEXT.prototype.parse = function (context) {
+        return this.text;
+    };
+    TEXT.prototype.append = function (instruction) {
+        throw new Error("Method not allowed.");
+    };
+    return TEXT;
+}(Instruction));
+var VAR = (function (_super) {
+    __extends(VAR, _super);
+    function VAR(params, isEscaped) {
+        var _this = _super.call(this, ESalvageBlockType.TOKEN_VAR, params) || this;
+        _this.isEscaped = isEscaped;
+        return _this;
+    }
+    VAR.prototype.allowChildren = function () {
+        return false;
+    };
+    VAR.prototype.parse = function (context) {
+        return context.get(this.getParam(0));
+    };
+    VAR.prototype.append = function (instruction) {
+        throw new Error('A VAR block does not allow insertion');
+    };
+    return VAR;
+}(Instruction));
+var EACH = (function (_super) {
+    __extends(EACH, _super);
+    function EACH(params) {
+        var _this = _super.call(this, ESalvageBlockType.TOKEN_EACH, params) || this;
+        _this.children = [];
+        return _this;
+    }
+    EACH.prototype.allowChildren = function () {
+        return true;
+    };
+    EACH.prototype.parse = function (context) {
+        var result = '';
+        (function (self) {
+            context.each(this.getParam(0), function (item) {
+                for (var i = 0, len = self.children.length; i < len; i++) {
+                    result = result.concat(self.children[i].parse(item));
+                }
+            });
+        })(this);
+        return result;
+    };
+    EACH.prototype.append = function (instruction) {
+        if (instruction.getBlockType() === ESalvageBlockType.TOKEN_END) {
+            return this.getParent();
+        }
+        else {
+            this.children.push(instruction.withParent(this));
+            return instruction.allowChildren()
+                ? instruction
+                : this;
+        }
+    };
+    return EACH;
+}(Instruction));
+var ELSE = (function (_super) {
+    __extends(ELSE, _super);
+    function ELSE() {
+        return _super.call(this, ESalvageBlockType.TOKEN_ELSE, null) || this;
+    }
+    ELSE.prototype.allowChildren = function () {
+        return false;
+    };
+    ELSE.prototype.parse = function (context) {
+        throw new Error("Should never be parsed");
+    };
+    ELSE.prototype.append = function (instruction) {
+        throw new Error("Cannot have children");
+    };
+    return ELSE;
+}(Instruction));

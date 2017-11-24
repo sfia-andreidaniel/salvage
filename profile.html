@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>debug</title>
+    <script type="text/javascript" src="salvage.js"></script>
+    <script type="text/javascript" src="sample.js"></script>
+</head>
+<body>
+
+    <textarea id ="debug" style="width: 100%; resize: none; height: 200px;"></textarea>
+
+    <button id="benchmark" onclick="run()">Benchmark</button>
+
+    <script>
+        function run() {
+
+            var start = +new Date,
+                tpl = new Salvage( sample.tpl );
+
+            var end = +new Date;
+
+            tpl.parse( sample.model );
+
+            document.getElementById('debug').value = tpl.parse(sample.model) + "\n\n" + ( end - start ) + ' ms';
+        }
+    </script>
+
+</body>
+</html>
